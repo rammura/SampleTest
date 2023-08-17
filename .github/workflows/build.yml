@@ -1,122 +1,17 @@
-name: Branch Development
-on:
-  workflow_call:
-    inputs:
-      includeIntegrationTests:
-        default: false
-        description: 'Run integration tests?'
-        required: true
-        type: boolean
-      includeJsTests:
-        default: false
-        description: 'Run js integration tests?'
-        required: true
-        type: boolean
-      includeTvTests:
-        default: false
-        description: 'Run vizios module tests?'
-        required: true
-        type: boolean
-      runSonarQube:
-        default: false
-        required: true
-        description: "Run code analysis and upload to SonarQube?"
-        type: boolean
-      platformsToBuild:
-        default: 'android,jvm'
-        description: 'Which platforms build?'
-        required: true
-        type: string
-      use_cache:
-        description: 'Use workflow cache'
-        required: false
-        default: 'false'
-        type: string
-    secrets:
-      ARTIFACTORY_USER:
-        required: true
-      ARTIFACTORY_PASSWORD:
-        required: true
-      ARTIFACTORY_URL:
-        required: true
-      SONAR_TOKEN:
-        required: true
+name: Super-Linter
+
+on: push
 
 jobs:
-  build_platforms:
-    name: Build
+  super-lint:
+    name: Lint code base
     runs-on: ubuntu-latest
-    env:
-      ARTIFACTORY_USER: ${{ secrets.ARTIFACTORY_USER }}
-      ARTIFACTORY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
-      ARTIFACTORY_URL: ${{ secrets.ARTIFACTORY_URL }}
-
     steps:
-      - uses: actions/checkout@v2
-#          https://github.com/actions/checkout/tree/releases/v2#usage
-#          # The branch, tag or SHA to checkout. When checking out the repository that
-#          # triggered a workflow, this defaults to the reference or SHA for that event.
-#          # Otherwise, uses the default branch.
-#        with:
-#          ref: ''
-      - name: Cache Gradle packages
-        uses: actions/cache@v2
-        if: inputs.use_cache == 'true'
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-      - name: Cache SonarQube packages
-        if: inputs.use_cache == 'true'
-        uses: actions/cache@v1
-        with:
-          path: ~/.sonar/cache
-          key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
-
-      - uses: actions/setup-java@v1
-        with:
-          java-version: 11
-
-      - name: Build
-        run: |
-          git fetch --unshallow
-          chmod +x gradlew
-          if [[ ${EVENT_TYPE} == "pull_request" || ${EVENT_TYPE} == "workflow_dispatch" ]] && [[ ${INTEGRATION_TESTS} == true ]] ; then
-            ./gradlew build -PincludeIntegrationTests=${INTEGRATION_TESTS} -PincludeJsTests=${JS_TESTS} -PincludeTvTests=${TV_TESTS} -PplatformsToBuild=${PLATFORMS} -PintegrationTestUserAgent=${INTEGRATION_TEST_USER_AGENT}
-          else
-            ./gradlew build -PincludeIntegrationTests=${INTEGRATION_TESTS} -PincludeJsTests=${JS_TESTS} -PincludeTvTests=${TV_TESTS} -PplatformsToBuild=${PLATFORMS}
-          fi
+      - name: Run Super-Linter
+        uses: github/super-linter@v4
         env:
-          INTEGRATION_TESTS: ${{ inputs.includeIntegrationTests }}
-          JS_TESTS: ${{ inputs.includeJsTests }}
-          TV_TESTS: ${{ inputs.includeTvTests }}
-          PLATFORMS: ${{ inputs.platformsToBuild }}
-          INTEGRATION_TEST_USER_AGENT: ${{ secrets.INTEGRATION_TEST_USER_AGENT }}
-          EVENT_TYPE: ${{ github.event_name }}
-
-      # Generate Kover Report. Only runs on JVM/commonMain. Never run integration tests for consistent reporting.
-      - name: Reports (Kover test coverage)
-        run: ./gradlew koverMergedVerify koverMergedXmlReport -PincludeIntegrationTests=false -PincludeJsTests=false -PincludeTvTests=false -PplatformsToBuild=android,jvm
-
-      # Generate code smells report (configured via detekt.yml)
-      - name: Reports (Detekt code smells)
-        run: ./gradlew detekt
-
-      # Upload Kover and Detekt reports to SonarQube
-      - name: Analyze
-        if: inputs.runSonarQube
-        run: |
-          if [ ${USE_CACHE} == "true" ] ; then
-            ./gradlew sonarqube --info --build-cache
-          else
-            ./gradlew sonarqube --info
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          USE_CACHE: ${{ inputs.use_cache }}
+          DEFAULT_BRANCH: main
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
